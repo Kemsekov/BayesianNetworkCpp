@@ -44,12 +44,12 @@ float logSumExp(const std::vector<float>& values) {
 
 }  // namespace
 
-Potential::Potential() : log_(1, 0.0f) {}  // identity: P() = 1
+Potential::Potential() : log_(1, 0.0f) { computeCached(); }  // identity: P() = 1
 
 Potential::Potential(std::vector<Variable> variables, std::vector<float> probabilities)
     : variables_(std::move(variables)), log_(probabilities.size()) {
-    const int expected = product(dimsOf(variables_));
-    if (static_cast<int>(probabilities.size()) != expected) {
+    computeCached();
+    if (static_cast<int>(probabilities.size()) != num_entries_) {
         throw std::invalid_argument(
             "Potential: number of probabilities does not match the product of "
             "variable state counts");
@@ -67,8 +67,8 @@ Potential Potential::fromLog(std::vector<Variable> variables,
     Potential p;
     p.variables_ = std::move(variables);
     p.log_ = std::move(log_table);
-    const int expected = product(dimsOf(p.variables_));
-    if (static_cast<int>(p.log_.size()) != expected) {
+    p.computeCached();
+    if (static_cast<int>(p.log_.size()) != p.num_entries_) {
         throw std::invalid_argument(
             "Potential::fromLog: log-table size does not match the product of "
             "variable state counts");
@@ -76,7 +76,20 @@ Potential Potential::fromLog(std::vector<Variable> variables,
     return p;
 }
 
-int Potential::numEntries() const { return product(dimsOf(variables_)); }
+void Potential::computeCached() {
+    dims_.clear();
+    dims_.reserve(variables_.size());
+    for (const Variable& v : variables_) dims_.push_back(v.num_states());
+    strides_.assign(dims_.size(), 1);
+    int acc = 1;
+    for (int i = static_cast<int>(dims_.size()) - 1; i >= 0; --i) {
+        strides_[i] = acc;
+        acc *= dims_[i];
+    }
+    num_entries_ = acc;
+}
+
+int Potential::numEntries() const { return num_entries_; }
 
 bool Potential::contains(const Variable& v) const {
     return std::any_of(variables_.begin(), variables_.end(),
@@ -103,8 +116,6 @@ int Potential::positionOfId(int variable_id) const {
 }
 
 float Potential::probability(const std::map<Variable, int>& assignment) const {
-    const std::vector<int> dims = dimsOf(variables_);
-    const std::vector<int> strides = rowMajorStrides(dims);
     int idx = 0;
     for (std::size_t i = 0; i < variables_.size(); ++i) {
         auto it = assignment.find(variables_[i]);
@@ -113,12 +124,12 @@ float Potential::probability(const std::map<Variable, int>& assignment) const {
                 "Potential::probability: missing assignment for variable " +
                 variables_[i].name());
         }
-        if (it->second < 0 || it->second >= dims[i]) {
+        if (it->second < 0 || it->second >= dims_[i]) {
             throw std::invalid_argument(
                 "Potential::probability: state out of range for variable " +
                 variables_[i].name());
         }
-        idx += it->second * strides[i];
+        idx += it->second * strides_[i];
     }
     return std::exp(log_[idx]);
 }
@@ -154,10 +165,8 @@ Potential Potential::operator*(const Potential& other) const {
 
     const std::vector<int> rdims = dimsOf(result_vars);
     const std::vector<int> rstride = rowMajorStrides(rdims);
-    const std::vector<int> adims = dimsOf(variables_);
-    const std::vector<int> astride = rowMajorStrides(adims);
-    const std::vector<int> bdims = dimsOf(other.variables_);
-    const std::vector<int> bstride = rowMajorStrides(bdims);
+    const std::vector<int>& astride = strides_;
+    const std::vector<int>& bstride = other.strides_;
 
     const int total = product(rdims);
     std::vector<float> out(total);
@@ -185,10 +194,10 @@ Potential Potential::operator/(const Potential& divisor) const {
                 "scope");
         }
     }
-    const std::vector<int> dims = dimsOf(variables_);
-    const std::vector<int> stride = rowMajorStrides(dims);
-    const std::vector<int> ddims = dimsOf(divisor.variables_);
-    const std::vector<int> dstride = rowMajorStrides(ddims);
+    const std::vector<int>& dims = dims_;
+    const std::vector<int>& stride = strides_;
+    const std::vector<int>& ddims = divisor.dims_;
+    const std::vector<int>& dstride = divisor.strides_;
 
     std::vector<int> map(divisor.variables_.size());
     for (std::size_t i = 0; i < divisor.variables_.size(); ++i) {
@@ -233,8 +242,8 @@ Potential Potential::marginalize(const std::vector<Variable>& to_sum_out) const 
         }
     }
 
-    const std::vector<int> dims = dimsOf(variables_);
-    const std::vector<int> stride = rowMajorStrides(dims);
+    const std::vector<int>& dims = dims_;
+    const std::vector<int>& stride = strides_;
     std::vector<int> keep_dim, sum_dim;
     for (int p : keep_pos) keep_dim.push_back(dims[p]);
     for (int p : sum_pos) sum_dim.push_back(dims[p]);
@@ -284,8 +293,8 @@ Potential Potential::reorder(const std::vector<Variable>& order) const {
             "Potential::reorder: order is not a permutation of the scope");
     }
 
-    const std::vector<int> dims = dimsOf(variables_);
-    const std::vector<int> stride = rowMajorStrides(dims);
+    const std::vector<int>& dims = dims_;
+    const std::vector<int>& stride = strides_;
     const std::vector<int> rdims = dimsOf(order);
     const std::vector<int> rstride = rowMajorStrides(rdims);
 
@@ -321,26 +330,29 @@ Potential Potential::restrict(const std::map<Variable, int>& assignment) const {
         }
     }
 
-    const std::vector<int> dims = dimsOf(variables_);
-    const std::vector<int> stride = rowMajorStrides(dims);
+    const std::vector<int>& dims = dims_;
+    const std::vector<int>& stride = strides_;
     std::vector<int> keep_dim;
     for (int p : keep_pos) keep_dim.push_back(dims[p]);
+
+    // Index contribution of the fixed variables is constant across all cells.
+    int fixed_offset = 0;
+    for (int p : fix_pos) {
+        const auto it = assignment.find(variables_[p]);
+        if (it->second < 0 || it->second >= dims[p]) {
+            throw std::invalid_argument(
+                "Potential::restrict: state out of range");
+        }
+        fixed_offset += it->second * stride[p];
+    }
 
     const int total_keep = product(keep_dim);
     std::vector<float> out(total_keep);
     std::vector<int> cur_keep(keep_pos.size(), 0);
     for (int k = 0; k < total_keep; ++k) {
-        int idx = 0;
+        int idx = fixed_offset;
         for (std::size_t i = 0; i < keep_pos.size(); ++i) {
             idx += cur_keep[i] * stride[keep_pos[i]];
-        }
-        for (int p : fix_pos) {
-            auto it = assignment.find(variables_[p]);
-            if (it->second < 0 || it->second >= dims[p]) {
-                throw std::invalid_argument(
-                    "Potential::restrict: state out of range");
-            }
-            idx += it->second * stride[p];
         }
         out[k] = log_[idx];
         for (int r = static_cast<int>(keep_pos.size()) - 1; r >= 0; --r) {
@@ -371,8 +383,8 @@ Potential& Potential::normalizeOver(const std::vector<Variable>& to_normalize) {
         }
     }
 
-    const std::vector<int> dims = dimsOf(variables_);
-    const std::vector<int> stride = rowMajorStrides(dims);
+    const std::vector<int>& dims = dims_;
+    const std::vector<int>& stride = strides_;
     std::vector<int> norm_dim, other_dim;
     for (int p : norm_pos) norm_dim.push_back(dims[p]);
     for (int p : other_pos) other_dim.push_back(dims[p]);
