@@ -1,5 +1,6 @@
 include pyproject.toml
 include setup.py
+include README.md
 include python/README.md
 recursive-include python/bayesian *.py *.cpp *.h
 recursive-include src *.h *.cpp

@@ -4,9 +4,29 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bayesian-cpp"
-version = "0.1.0"
-description = "C++ Bayesian network engine (variable elimination + junction tree) exposed to Python via pybind11"
+version = "0.1.1"
+description = "Fast C++ Bayesian network inference (variable elimination + junction tree) with Python bindings"
+readme = "README.md"
 requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Kemsekov", email = "pikova98@gmail.com" }]
+keywords = ["bayesian network", "probabilistic graphical models", "inference",
+            "variable elimination", "junction tree", "belief propagation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+[project.urls]
+"Source" = "https://github.com/Kemsekov/BayesianNetworkCpp"
+"Bug Tracker" = "https://github.com/Kemsekov/BayesianNetworkCpp/issues"
 
 [tool.setuptools]
 package-dir = {"" = "python"}
