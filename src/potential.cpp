@@ -195,8 +195,6 @@ Potential Potential::operator/(const Potential& divisor) const {
         }
     }
     const std::vector<int>& dims = dims_;
-    const std::vector<int>& stride = strides_;
-    const std::vector<int>& ddims = divisor.dims_;
     const std::vector<int>& dstride = divisor.strides_;
 
     std::vector<int> map(divisor.variables_.size());
@@ -293,7 +291,6 @@ Potential Potential::reorder(const std::vector<Variable>& order) const {
             "Potential::reorder: order is not a permutation of the scope");
     }
 
-    const std::vector<int>& dims = dims_;
     const std::vector<int>& stride = strides_;
     const std::vector<int> rdims = dimsOf(order);
     const std::vector<int> rstride = rowMajorStrides(rdims);
