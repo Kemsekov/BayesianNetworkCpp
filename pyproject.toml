@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "pybind11>=2.10"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bayesian-cpp"
+version = "0.1.0"
+description = "C++ Bayesian network engine (variable elimination + junction tree) exposed to Python via pybind11"
+requires-python = ">=3.8"
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+
+[tool.setuptools.packages.find]
+where = ["python"]
