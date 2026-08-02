@@ -47,9 +47,11 @@ private:
     /// Throws if any variable does not occur in the network.
     void checkVariables(const std::vector<Variable>& vars) const;
     /// Multiplies all factors and sums out every variable not in `query_ids`.
+    /// The elimination order is computed once per query set and cached.
     Potential eliminate(const std::set<int>& query_ids) const;
 
     std::vector<Potential> factors_;
+    mutable std::map<std::set<int>, std::vector<int>> order_cache_;
 };
 
 }  // namespace bn

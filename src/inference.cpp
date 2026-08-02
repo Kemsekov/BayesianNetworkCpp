@@ -19,65 +19,105 @@ bool disjointSets(const std::vector<Variable>& a, const std::vector<Variable>& b
     return true;
 }
 
-/// Multiplies all factors and sums out every variable not in `query_ids`.
-/// `factors` are moved through but never modified in place.
-Potential eliminateOn(const std::vector<Potential>& factors,
-                      const std::set<int>& query_ids) {
-    std::vector<Potential> work = factors;
-    std::set<int> present;
-    for (const Potential& f : work) {
-        for (const Variable& v : f.variables()) present.insert(v.id());
-    }
-
-    // Variables to sum out: every variable that is not part of the query.
-    std::set<int> to_eliminate;
-    for (int id : present) {
-        if (!query_ids.count(id)) to_eliminate.insert(id);
-    }
-
-    const auto factorCount = [&](int id) {
-        int count = 0;
-        for (const Potential& f : work) {
-            if (f.contains(id)) ++count;
-        }
-        return count;
+/// Greedy min-fill elimination order for the variables not in `query_ids`.
+/// The optimal order is NP-hard; min-fill (fewest new edges in the moral
+/// graph) is the standard near-optimal heuristic, with min-degree and then
+/// lowest id as tie-breakers. The simulated graph exactly tracks the scopes
+/// of the current factors, so the order is valid for `eliminateInOrder`.
+std::vector<int> computeEliminationOrder(const std::vector<Potential>& factors,
+                                         const std::set<int>& query_ids) {
+    std::map<int, std::set<int>> adj;
+    const auto addEdge = [&](int a, int b) {
+        if (a == b) return;
+        adj[a].insert(b);
+        adj[b].insert(a);
     };
-
-    // Greedy min-degree elimination order (ties broken by lowest id) so that
-    // intermediate tables stay as small as possible.
-    while (!to_eliminate.empty()) {
-        int best = -1;
-        int best_count = std::numeric_limits<int>::max();
-        for (int id : to_eliminate) {
-            const int count = factorCount(id);
-            if (count < best_count ||
-                (count == best_count && (best == -1 || id < best))) {
-                best = id;
-                best_count = count;
+    for (const Potential& f : factors) {
+        const auto& vs = f.variables();
+        for (std::size_t i = 0; i < vs.size(); ++i) {
+            for (std::size_t j = i + 1; j < vs.size(); ++j) {
+                addEdge(vs[i].id(), vs[j].id());
             }
         }
-        to_eliminate.erase(best);
+    }
 
-        // Multiply every factor that mentions `best`, then sum it out.
-        Potential bundle;
-        std::vector<Potential> rest;
-        rest.reserve(work.size());
-        for (Potential& f : work) {
-            if (f.contains(best)) {
-                bundle = bundle * f;
-            } else {
-                rest.push_back(std::move(f));
+    std::set<int> remaining;
+    for (const Potential& f : factors) {
+        for (const Variable& v : f.variables()) {
+            if (!query_ids.count(v.id())) remaining.insert(v.id());
+        }
+    }
+
+    std::vector<int> order;
+    while (!remaining.empty()) {
+        int best = -1;
+        int best_fill = std::numeric_limits<int>::max();
+        int best_deg = std::numeric_limits<int>::max();
+        for (int v : remaining) {
+            const std::set<int>& nbr = adj[v];
+            int fill = 0;
+            for (int a : nbr) {
+                const std::set<int>& set_a = adj[a];
+                for (int b : nbr) {
+                    if (b > a && !set_a.count(b)) ++fill;
+                }
             }
+            const int deg = static_cast<int>(nbr.size());
+            const bool better =
+                fill < best_fill ||
+                (fill == best_fill &&
+                 (deg < best_deg ||
+                  (deg == best_deg && (best == -1 || v < best))));
+            if (better) {
+                best = v;
+                best_fill = fill;
+                best_deg = deg;
+            }
+        }
+        remaining.erase(best);
+        order.push_back(best);
+
+        // Simulate the elimination: connect the neighbors of `best` (fill-in).
+        const std::set<int> nbr = adj[best];
+        adj.erase(best);
+        for (int a : nbr) adj[a].erase(best);
+        for (int a : nbr) {
+            for (int b : nbr) {
+                if (a < b) addEdge(a, b);
+            }
+        }
+    }
+    return order;
+}
+
+/// Eliminate the variables listed in `order` from `factors` and return the
+/// product of the remaining factors. `order` must contain every non-query
+/// variable exactly once. Factors are stored in a pool and referenced by
+/// index, so no factor is copied or re-allocated during elimination.
+Potential eliminateInOrder(const std::vector<Potential>& factors,
+                           const std::vector<int>& order) {
+    std::vector<Potential> pool = factors;  // single copy of the input list
+    std::vector<char> active(pool.size(), 1);
+    for (int v : order) {
+        std::vector<int> idxs;
+        for (int i = 0; i < static_cast<int>(pool.size()); ++i) {
+            if (active[i] && pool[i].contains(v)) idxs.push_back(i);
+        }
+        Potential bundle;
+        for (int i : idxs) {
+            bundle = bundle * pool[i];
+            active[i] = 0;
         }
         const auto it = std::find_if(
             bundle.variables().begin(), bundle.variables().end(),
-            [&](const Variable& v) { return v.id() == best; });
-        rest.push_back(bundle.marginalize({*it}));
-        work = std::move(rest);
+            [&](const Variable& x) { return x.id() == v; });
+        pool.push_back(bundle.marginalize({*it}));
+        active.push_back(1);
     }
-
     Potential result;
-    for (const Potential& f : work) result = result * f;
+    for (int i = 0; i < static_cast<int>(pool.size()); ++i) {
+        if (active[i]) result = result * pool[i];
+    }
     return result;
 }
 
@@ -115,7 +155,13 @@ void Inference::checkVariables(const std::vector<Variable>& vars) const {
 }
 
 Potential Inference::eliminate(const std::set<int>& query_ids) const {
-    return eliminateOn(factors_, query_ids);
+    auto it = order_cache_.find(query_ids);
+    if (it == order_cache_.end()) {
+        it = order_cache_
+                 .emplace(query_ids, computeEliminationOrder(factors_, query_ids))
+                 .first;
+    }
+    return eliminateInOrder(factors_, it->second);
 }
 
 Potential Inference::fullJoint() const {
@@ -208,7 +254,8 @@ Potential Inference::conditionalGiven(const std::vector<Variable>& query,
     std::set<int> query_ids;
     for (const Variable& v : query) query_ids.insert(v.id());
 
-    Potential p = eliminateOn(restricted, query_ids);
+    Potential p = eliminateInOrder(restricted,
+                                   computeEliminationOrder(restricted, query_ids));
 
     // Zero-probability evidence guard: if every entry is log(0).
     const std::vector<float>& logt = p.logTable();

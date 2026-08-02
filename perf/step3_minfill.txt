@@ -1,0 +1,32 @@
+Bayesian network engine performance benchmark
+compiled with JunctionTree: no
+
+## chain16  (16 vars, 16 factors)
+fullJoint P(all)                                                 1.453 ms
+marginal single (all 16 vars / sweep)                           0.2169 ms
+marginal pair (all 15 consecutive pairs / sweep)                0.1938 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.1709 ms
+repeated same conditional x 200 (Inference)                      4.275 ms
+  correctness sanity: OK
+
+## chain60  (60 vars, 60 factors)
+marginal single (all 60 vars / sweep)                            3.182 ms
+marginal pair (all 59 consecutive pairs / sweep)                 3.087 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.9787 ms
+repeated same conditional x 200 (Inference)                      22.66 ms
+  correctness sanity: OK
+
+## ladder2x14  (28 vars, 28 factors)
+marginal single (all 28 vars / sweep)                           0.7829 ms
+marginal pair (all 27 consecutive pairs / sweep)                0.7986 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.5879 ms
+repeated same conditional x 200 (Inference)                      12.52 ms
+  correctness sanity: OK
+
+## naive15  (16 vars, 16 factors)
+fullJoint P(all)                                                 1.437 ms
+marginal single (all 16 vars / sweep)                           0.2089 ms
+marginal pair (all 15 consecutive pairs / sweep)                0.1974 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                          0.183 ms
+repeated same conditional x 200 (Inference)                      4.038 ms
+  correctness sanity: OK
