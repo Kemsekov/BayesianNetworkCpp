@@ -276,4 +276,28 @@ Potential Inference::conditionalGiven(const std::vector<Variable>& query,
     return p.reorder(wanted);
 }
 
+std::map<Variable, int> Inference::mapQuery(
+    const std::vector<Variable>& query,
+    const std::map<Variable, int>& evidence) const {
+    const Potential p = conditionalGiven(query, evidence);
+    const std::vector<float>& logt = p.logTable();
+    int best = 0;
+    for (int i = 1; i < static_cast<int>(logt.size()); ++i) {
+        if (logt[i] > logt[best]) best = i;
+    }
+    std::map<Variable, int> result;
+    const auto& vars = p.variables();
+    std::vector<int> strides;
+    strides.reserve(vars.size());
+    int acc = 1;
+    for (int i = static_cast<int>(vars.size()) - 1; i >= 0; --i) {
+        strides.insert(strides.begin(), acc);
+        acc *= vars[i].num_states();
+    }
+    for (std::size_t i = 0; i < vars.size(); ++i) {
+        result[vars[i]] = (best / strides[i]) % vars[i].num_states();
+    }
+    return result;
+}
+
 }  // namespace bn

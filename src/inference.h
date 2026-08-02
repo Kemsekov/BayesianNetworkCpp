@@ -41,6 +41,10 @@ public:
     Potential conditionalGiven(const std::vector<Variable>& query,
                                const std::map<Variable, int>& evidence) const;
 
+    /// Most likely joint assignment over `query` given `evidence` (MAP query).
+    std::map<Variable, int> mapQuery(const std::vector<Variable>& query,
+                                     const std::map<Variable, int>& evidence) const;
+
 private:
     /// Variables ordered by first appearance across the factors.
     std::vector<Variable> globalOrder() const;
