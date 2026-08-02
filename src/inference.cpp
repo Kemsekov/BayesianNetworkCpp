@@ -19,32 +19,53 @@ bool disjointSets(const std::vector<Variable>& a, const std::vector<Variable>& b
     return true;
 }
 
-/// Greedy min-fill elimination order for the variables not in `query_ids`.
-/// The optimal order is NP-hard; min-fill (fewest new edges in the moral
-/// graph) is the standard near-optimal heuristic, with min-degree and then
-/// lowest id as tie-breakers. The simulated graph exactly tracks the scopes
-/// of the current factors, so the order is valid for `eliminateInOrder`.
+/// Greedy weighted min-fill elimination order for the variables not in
+/// `query_ids`. The optimal order is NP-hard; min-fill (fewest new edges in
+/// the moral graph) is the standard near-optimal heuristic, with the size of
+/// the resulting intermediate factor (product of neighbour state counts),
+/// min-degree and then lowest id as tie-breakers. Variable ids are remapped
+/// to dense indices first so the greedy loop uses cheap vector indexing
+/// instead of std::map lookups.
 std::vector<int> computeEliminationOrder(const std::vector<Potential>& factors,
                                          const std::set<int>& query_ids) {
-    std::map<int, std::set<int>> adj;
+    // One-time remap of variable ids to 0..n-1.
+    std::map<int, int> dense_of;
+    std::vector<int> dense_to_id;
+    std::vector<int> states;             // dense id -> number of states
+    std::vector<std::vector<int>> scopes;  // dense ids per factor scope
+    for (const Potential& f : factors) {
+        std::vector<int> dv;
+        for (const Variable& v : f.variables()) {
+            auto it = dense_of.find(v.id());
+            if (it == dense_of.end()) {
+                it = dense_of.emplace(v.id(), static_cast<int>(dense_to_id.size())).first;
+                dense_to_id.push_back(v.id());
+                states.push_back(v.num_states());
+            }
+            dv.push_back(it->second);
+        }
+        scopes.push_back(std::move(dv));
+    }
+    const int n = static_cast<int>(dense_to_id.size());
+
+    std::vector<std::set<int>> adj(n);
     const auto addEdge = [&](int a, int b) {
         if (a == b) return;
         adj[a].insert(b);
         adj[b].insert(a);
     };
-    for (const Potential& f : factors) {
-        const auto& vs = f.variables();
-        for (std::size_t i = 0; i < vs.size(); ++i) {
-            for (std::size_t j = i + 1; j < vs.size(); ++j) {
-                addEdge(vs[i].id(), vs[j].id());
+    for (const auto& dv : scopes) {
+        for (std::size_t i = 0; i < dv.size(); ++i) {
+            for (std::size_t j = i + 1; j < dv.size(); ++j) {
+                addEdge(dv[i], dv[j]);
             }
         }
     }
 
     std::set<int> remaining;
-    for (const Potential& f : factors) {
-        for (const Variable& v : f.variables()) {
-            if (!query_ids.count(v.id())) remaining.insert(v.id());
+    for (const auto& dv : scopes) {
+        for (int d : dv) {
+            if (!query_ids.count(dense_to_id[d])) remaining.insert(d);
         }
     }
 
@@ -52,6 +73,7 @@ std::vector<int> computeEliminationOrder(const std::vector<Potential>& factors,
     while (!remaining.empty()) {
         int best = -1;
         int best_fill = std::numeric_limits<int>::max();
+        long long best_weight = std::numeric_limits<long long>::max();
         int best_deg = std::numeric_limits<int>::max();
         for (int v : remaining) {
             const std::set<int>& nbr = adj[v];
@@ -62,24 +84,30 @@ std::vector<int> computeEliminationOrder(const std::vector<Potential>& factors,
                     if (b > a && !set_a.count(b)) ++fill;
                 }
             }
+            long long weight = 1;  // size of the intermediate factor
+            for (int a : nbr) weight *= states[a];
             const int deg = static_cast<int>(nbr.size());
             const bool better =
                 fill < best_fill ||
                 (fill == best_fill &&
-                 (deg < best_deg ||
-                  (deg == best_deg && (best == -1 || v < best))));
+                 (weight < best_weight ||
+                  (weight == best_weight &&
+                   (deg < best_deg ||
+                    (deg == best_deg &&
+                     (best == -1 || dense_to_id[v] < dense_to_id[best]))))));
             if (better) {
                 best = v;
                 best_fill = fill;
+                best_weight = weight;
                 best_deg = deg;
             }
         }
         remaining.erase(best);
-        order.push_back(best);
+        order.push_back(dense_to_id[best]);
 
         // Simulate the elimination: connect the neighbors of `best` (fill-in).
         const std::set<int> nbr = adj[best];
-        adj.erase(best);
+        adj[best].clear();
         for (int a : nbr) adj[a].erase(best);
         for (int a : nbr) {
             for (int b : nbr) {
@@ -92,27 +120,34 @@ std::vector<int> computeEliminationOrder(const std::vector<Potential>& factors,
 
 /// Eliminate the variables listed in `order` from `factors` and return the
 /// product of the remaining factors. `order` must contain every non-query
-/// variable exactly once. Factors are stored in a pool and referenced by
-/// index, so no factor is copied or re-allocated during elimination.
+/// variable exactly once. Factors live in a pool referenced by index, and a
+/// per-variable index of active factors avoids scanning the whole pool on
+/// every elimination step.
 Potential eliminateInOrder(const std::vector<Potential>& factors,
                            const std::vector<int>& order) {
     std::vector<Potential> pool = factors;  // single copy of the input list
     std::vector<char> active(pool.size(), 1);
-    for (int v : order) {
-        std::vector<int> idxs;
-        for (int i = 0; i < static_cast<int>(pool.size()); ++i) {
-            if (active[i] && pool[i].contains(v)) idxs.push_back(i);
+    std::map<int, std::vector<int>> by_var;  // variable id -> active pool indices
+    for (int i = 0; i < static_cast<int>(pool.size()); ++i) {
+        for (const Variable& v : pool[i].variables()) {
+            by_var[v.id()].push_back(i);
         }
+    }
+    for (int v : order) {
         Potential bundle;
-        for (int i : idxs) {
+        std::vector<int>& list = by_var[v];
+        for (int i : list) {
+            if (!active[i]) continue;
             bundle = bundle * pool[i];
             active[i] = 0;
         }
-        const auto it = std::find_if(
-            bundle.variables().begin(), bundle.variables().end(),
-            [&](const Variable& x) { return x.id() == v; });
-        pool.push_back(bundle.marginalize({*it}));
+        // marginalize matches by id, so a placeholder Variable suffices.
+        const int new_idx = static_cast<int>(pool.size());
+        pool.push_back(bundle.marginalize({Variable(v, "", 0)}));
         active.push_back(1);
+        for (const Variable& x : pool[new_idx].variables()) {
+            by_var[x.id()].push_back(new_idx);
+        }
     }
     Potential result;
     for (int i = 0; i < static_cast<int>(pool.size()); ++i) {

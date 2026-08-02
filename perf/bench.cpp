@@ -116,6 +116,29 @@ Network makeLadder(int cols, unsigned seed) {
     return net;
 }
 
+Network makeMixed(int n, unsigned seed) {
+    // Chain with alternating 2/3 state variables (exercises the weighted
+    // elimination order for non-uniform cardinalities).
+    Network net;
+    net.name = "mixed" + std::to_string(n);
+    for (int i = 0; i < n; ++i) {
+        net.vars.emplace_back(i, "M" + std::to_string(i), i % 2 == 0 ? 2 : 3);
+    }
+    std::mt19937 rng(seed);
+    net.factors.emplace_back(std::vector<Variable>{net.vars[0]},
+                             randomRow(rng, net.vars[0].num_states()));
+    for (int i = 1; i < n; ++i) {
+        const std::vector<Variable> scope{net.vars[i - 1], net.vars[i]};
+        std::vector<float> probs;
+        for (int p = 0; p < net.vars[i - 1].num_states(); ++p) {
+            const auto row = randomRow(rng, net.vars[i].num_states());
+            probs.insert(probs.end(), row.begin(), row.end());
+        }
+        net.factors.emplace_back(scope, std::move(probs));
+    }
+    return net;
+}
+
 Network makeNaive(int leaves, unsigned seed) {
     Network net;
     net.name = "naive" + std::to_string(leaves);
@@ -288,6 +311,7 @@ int main() {
     runSuite(makeChain(60, 2), 2);
     runSuite(makeLadder(14, 3), 3);
     runSuite(makeNaive(15, 4), 4);
+    runSuite(makeMixed(30, 5), 5);
 
     return 0;
 }

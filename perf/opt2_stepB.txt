@@ -1,0 +1,44 @@
+Bayesian network engine performance benchmark
+compiled with JunctionTree: yes
+
+## chain16  (16 vars, 16 factors)
+fullJoint P(all)                                                0.6187 ms
+marginal single (all 16 vars / sweep)                           0.2225 ms
+marginal pair (all 15 consecutive pairs / sweep)                0.1905 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.1641 ms
+repeated same conditional x 200 (Inference)                      4.277 ms
+repeated same marginal x 200 (JunctionTree)                    0.07157 ms
+  correctness sanity: OK
+
+## chain60  (60 vars, 60 factors)
+marginal single (all 60 vars / sweep)                            3.072 ms
+marginal pair (all 59 consecutive pairs / sweep)                 2.976 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.8636 ms
+repeated same conditional x 200 (Inference)                      21.61 ms
+repeated same marginal x 200 (JunctionTree)                     0.0781 ms
+  correctness sanity: OK
+
+## ladder2x14  (28 vars, 28 factors)
+marginal single (all 28 vars / sweep)                           0.8186 ms
+marginal pair (all 27 consecutive pairs / sweep)                0.7937 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.4926 ms
+repeated same conditional x 200 (Inference)                      12.51 ms
+repeated same marginal x 200 (JunctionTree)                    0.09094 ms
+  correctness sanity: OK
+
+## naive15  (16 vars, 16 factors)
+fullJoint P(all)                                                0.5911 ms
+marginal single (all 16 vars / sweep)                           0.2078 ms
+marginal pair (all 15 consecutive pairs / sweep)                0.1975 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.1878 ms
+repeated same conditional x 200 (Inference)                      4.214 ms
+repeated same marginal x 200 (JunctionTree)                     0.0751 ms
+  correctness sanity: OK
+
+## mixed30  (30 vars, 30 factors)
+marginal single (all 30 vars / sweep)                           0.8188 ms
+marginal pair (all 29 consecutive pairs / sweep)                0.7623 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.3737 ms
+repeated same conditional x 200 (Inference)                      9.347 ms
+repeated same marginal x 200 (JunctionTree)                    0.07646 ms
+  correctness sanity: OK

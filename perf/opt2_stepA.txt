@@ -1,0 +1,36 @@
+Bayesian network engine performance benchmark
+compiled with JunctionTree: yes
+
+## chain16  (16 vars, 16 factors)
+fullJoint P(all)                                                0.6077 ms
+marginal single (all 16 vars / sweep)                           0.2099 ms
+marginal pair (all 15 consecutive pairs / sweep)                0.1883 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.1693 ms
+repeated same conditional x 200 (Inference)                      4.212 ms
+repeated same marginal x 200 (JunctionTree)                    0.07423 ms
+  correctness sanity: OK
+
+## chain60  (60 vars, 60 factors)
+marginal single (all 60 vars / sweep)                            3.145 ms
+marginal pair (all 59 consecutive pairs / sweep)                 3.063 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.9751 ms
+repeated same conditional x 200 (Inference)                      23.36 ms
+repeated same marginal x 200 (JunctionTree)                    0.07993 ms
+  correctness sanity: OK
+
+## ladder2x14  (28 vars, 28 factors)
+marginal single (all 28 vars / sweep)                           0.7955 ms
+marginal pair (all 27 consecutive pairs / sweep)                0.7621 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.5889 ms
+repeated same conditional x 200 (Inference)                      12.43 ms
+repeated same marginal x 200 (JunctionTree)                    0.09227 ms
+  correctness sanity: OK
+
+## naive15  (16 vars, 16 factors)
+fullJoint P(all)                                                0.5954 ms
+marginal single (all 16 vars / sweep)                           0.2078 ms
+marginal pair (all 15 consecutive pairs / sweep)                0.1913 ms
+conditional P(X_i | X_..=0, X_..=1) x 8                         0.1785 ms
+repeated same conditional x 200 (Inference)                      3.993 ms
+repeated same marginal x 200 (JunctionTree)                    0.07432 ms
+  correctness sanity: OK

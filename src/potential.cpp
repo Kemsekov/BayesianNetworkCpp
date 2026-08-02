@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -14,32 +15,6 @@ int product(const std::vector<int>& dims) {
     int p = 1;
     for (int d : dims) p *= d;
     return p;
-}
-
-std::vector<int> dimsOf(const std::vector<Variable>& vars) {
-    std::vector<int> dims;
-    dims.reserve(vars.size());
-    for (const Variable& v : vars) dims.push_back(v.num_states());
-    return dims;
-}
-
-std::vector<int> rowMajorStrides(const std::vector<int>& dims) {
-    std::vector<int> strides(dims.size());
-    int acc = 1;
-    for (int i = static_cast<int>(dims.size()) - 1; i >= 0; --i) {
-        strides[i] = acc;
-        acc *= dims[i];
-    }
-    return strides;
-}
-
-float logSumExp(const std::vector<float>& values) {
-    if (values.empty()) return 0.0f;
-    float m = *std::max_element(values.begin(), values.end());
-    if (!std::isfinite(m)) return m;  // all entries were -inf (zero probability)
-    double acc = 0.0;
-    for (float v : values) acc += std::exp(static_cast<double>(v) - m);
-    return m + static_cast<float>(std::log(acc));
 }
 
 }  // namespace
@@ -143,44 +118,72 @@ std::vector<float> Potential::probabilities() const {
 Potential Potential::operator*(const Potential& other) const {
     // Scope of the result: this scope followed by other's variables not present.
     std::vector<Variable> result_vars = variables_;
-    for (const Variable& v : other.variables_) {
-        if (!contains(v)) result_vars.push_back(v);
-    }
-
-    // Map every result position to a position in each operand (or -1).
-    std::vector<int> map_this(result_vars.size(), -1);
-    std::vector<int> map_other(result_vars.size(), -1);
-    for (std::size_t r = 0; r < result_vars.size(); ++r) {
-        const int pa = positionOf(result_vars[r]);
-        const int pb = other.positionOf(result_vars[r]);
-        if (pa >= 0 && pb >= 0 &&
-            variables_[pa].num_states() != other.variables_[pb].num_states()) {
+    // For every this-variable, its position inside `other` (-1 if absent).
+    std::vector<int> shared_other_pos(variables_.size(), -1);
+    std::vector<Variable> other_new;  // other's variables not in this (trailing dims)
+    std::vector<int> other_new_pos;   // their positions inside `other`
+    for (std::size_t i = 0; i < variables_.size(); ++i) {
+        const int pb = other.positionOf(variables_[i]);
+        shared_other_pos[i] = pb;
+        if (pb >= 0 && variables_[i].num_states() != other.variables_[pb].num_states()) {
             throw std::invalid_argument(
                 "Potential::operator*: shared variable has mismatched state "
                 "counts");
         }
-        map_this[r] = pa;
-        map_other[r] = pb;
+    }
+    for (std::size_t i = 0; i < other.variables_.size(); ++i) {
+        if (!contains(other.variables_[i])) {
+            other_new.push_back(other.variables_[i]);
+            other_new_pos.push_back(static_cast<int>(i));
+        }
+    }
+    result_vars.insert(result_vars.end(), other_new.begin(), other_new.end());
+
+    // The trailing (other-only) dimensions vary fastest, so the result index
+    // is ia * nb + c, where ia enumerates this's cells and c the new dims.
+    int nb = 1;
+    for (const Variable& v : other_new) nb *= v.num_states();
+
+    // Precompute, for every combination c of the new dims, the contribution
+    // to the index inside `other`.
+    std::vector<int> bnew(nb);
+    {
+        std::vector<int> dims;
+        for (const Variable& v : other_new) dims.push_back(v.num_states());
+        std::vector<int> cur(other_new.size(), 0);
+        for (int c = 0; c < nb; ++c) {
+            int idx = 0;
+            for (std::size_t i = 0; i < other_new_pos.size(); ++i) {
+                idx += cur[i] * other.strides_[other_new_pos[i]];
+            }
+            bnew[c] = idx;
+            for (int r = static_cast<int>(dims.size()) - 1; r >= 0; --r) {
+                if (++cur[r] < dims[r]) break;
+                cur[r] = 0;
+            }
+        }
     }
 
-    const std::vector<int> rdims = dimsOf(result_vars);
-    const std::vector<int> rstride = rowMajorStrides(rdims);
-    const std::vector<int>& astride = strides_;
+    const int n_this = numEntries();
+    std::vector<float> out(n_this * nb);
+    const float* log_this = log_.data();
+    const float* log_other = other.log_.data();
     const std::vector<int>& bstride = other.strides_;
-
-    const int total = product(rdims);
-    std::vector<float> out(total);
-    std::vector<int> cur(result_vars.size(), 0);
-    for (int k = 0; k < total; ++k) {
-        int ia = 0, ib = 0;
-        for (std::size_t r = 0; r < result_vars.size(); ++r) {
-            if (map_this[r] >= 0) ia += cur[r] * astride[map_this[r]];
-            if (map_other[r] >= 0) ib += cur[r] * bstride[map_other[r]];
+    std::vector<int> cur_this(variables_.size(), 0);
+    for (int ia = 0; ia < n_this; ++ia) {
+        int ib_shared = 0;
+        for (std::size_t i = 0; i < variables_.size(); ++i) {
+            const int pb = shared_other_pos[i];
+            if (pb >= 0) ib_shared += cur_this[i] * bstride[pb];
         }
-        out[k] = log_[ia] + other.log_[ib];
-        for (int r = static_cast<int>(result_vars.size()) - 1; r >= 0; --r) {
-            if (++cur[r] < rdims[r]) break;
-            cur[r] = 0;
+        const float la = log_this[ia];
+        float* out_base = out.data() + ia * nb;
+        for (int c = 0; c < nb; ++c) {
+            out_base[c] = la + log_other[ib_shared + bnew[c]];
+        }
+        for (int r = static_cast<int>(variables_.size()) - 1; r >= 0; --r) {
+            if (++cur_this[r] < dims_[r]) break;
+            cur_this[r] = 0;
         }
     }
     return fromLog(std::move(result_vars), std::move(out));
@@ -194,26 +197,27 @@ Potential Potential::operator/(const Potential& divisor) const {
                 "scope");
         }
     }
-    const std::vector<int>& dims = dims_;
-    const std::vector<int>& dstride = divisor.strides_;
-
-    std::vector<int> map(divisor.variables_.size());
+    // Per dividend position: how much the divisor index changes when the
+    // odometer increments that dimension (0 for dimensions not in divisor).
+    std::vector<int> div_inc(variables_.size(), 0);
     for (std::size_t i = 0; i < divisor.variables_.size(); ++i) {
-        map[i] = positionOf(divisor.variables_[i]);
+        div_inc[positionOf(divisor.variables_[i])] = divisor.strides_[i];
     }
 
     const int total = numEntries();
     std::vector<float> out(total);
+    const float* log_this = log_.data();
+    const float* log_div = divisor.log_.data();
     std::vector<int> cur(variables_.size(), 0);
+    int div_idx = 0;
     for (int k = 0; k < total; ++k) {
-        int id = 0;
-        for (std::size_t i = 0; i < divisor.variables_.size(); ++i) {
-            id += cur[map[i]] * dstride[i];
-        }
-        out[k] = log_[k] - divisor.log_[id];
+        out[k] = log_this[k] - log_div[div_idx];
         for (int r = static_cast<int>(variables_.size()) - 1; r >= 0; --r) {
-            if (++cur[r] < dims[r]) break;
+            ++cur[r];
+            div_idx += div_inc[r];
+            if (cur[r] < dims_[r]) break;
             cur[r] = 0;
+            div_idx -= dims_[r] * div_inc[r];
         }
     }
     return fromLog(variables_, std::move(out));
@@ -249,27 +253,47 @@ Potential Potential::marginalize(const std::vector<Variable>& to_sum_out) const 
     const int total_keep = product(keep_dim);
     const int total_sum = product(sum_dim);
     std::vector<float> out(total_keep);
-    std::vector<int> cur_keep(keep_pos.size(), 0);
-    std::vector<int> cur_sum(sum_pos.size(), 0);
 
-    for (int k = 0; k < total_keep; ++k) {
-        std::vector<float> group(total_sum);
-        std::fill(cur_sum.begin(), cur_sum.end(), 0);
+    // Index contribution of each combination of the summed-out variables is
+    // independent of the kept variables, so it is precomputed once.
+    std::vector<int> sum_contrib(total_sum);
+    {
+        std::vector<int> cur(sum_pos.size(), 0);
         for (int s = 0; s < total_sum; ++s) {
             int idx = 0;
-            for (std::size_t i = 0; i < keep_pos.size(); ++i) {
-                idx += cur_keep[i] * stride[keep_pos[i]];
-            }
             for (std::size_t i = 0; i < sum_pos.size(); ++i) {
-                idx += cur_sum[i] * stride[sum_pos[i]];
+                idx += cur[i] * stride[sum_pos[i]];
             }
-            group[s] = log_[idx];
+            sum_contrib[s] = idx;
             for (int r = static_cast<int>(sum_pos.size()) - 1; r >= 0; --r) {
-                if (++cur_sum[r] < sum_dim[r]) break;
-                cur_sum[r] = 0;
+                if (++cur[r] < sum_dim[r]) break;
+                cur[r] = 0;
             }
         }
-        out[k] = logSumExp(group);
+    }
+
+    std::vector<int> cur_keep(keep_pos.size(), 0);
+    const float* data = log_.data();
+    for (int k = 0; k < total_keep; ++k) {
+        int keep_base = 0;
+        for (std::size_t i = 0; i < keep_pos.size(); ++i) {
+            keep_base += cur_keep[i] * stride[keep_pos[i]];
+        }
+        // log-sum-exp over the summed-out dimensions (two passes, no buffer).
+        float m = -std::numeric_limits<float>::infinity();
+        for (int s = 0; s < total_sum; ++s) {
+            const float v = data[keep_base + sum_contrib[s]];
+            if (v > m) m = v;
+        }
+        if (std::isfinite(m)) {
+            double acc = 0.0;
+            for (int s = 0; s < total_sum; ++s) {
+                acc += std::exp(static_cast<double>(data[keep_base + sum_contrib[s]]) - m);
+            }
+            out[k] = m + static_cast<float>(std::log(acc));
+        } else {
+            out[k] = m;  // every entry was log(0)
+        }
         for (int r = static_cast<int>(keep_pos.size()) - 1; r >= 0; --r) {
             if (++cur_keep[r] < keep_dim[r]) break;
             cur_keep[r] = 0;
@@ -292,24 +316,27 @@ Potential Potential::reorder(const std::vector<Variable>& order) const {
     }
 
     const std::vector<int>& stride = strides_;
-    const std::vector<int> rdims = dimsOf(order);
-    const std::vector<int> rstride = rowMajorStrides(rdims);
 
     std::vector<int> map(order.size());
     for (std::size_t i = 0; i < order.size(); ++i) map[i] = positionOf(order[i]);
+    std::vector<int> rdims;
+    rdims.reserve(order.size());
+    for (const Variable& v : order) rdims.push_back(v.num_states());
 
     const int total = numEntries();
     std::vector<float> out(total);
+    const float* data = log_.data();
     std::vector<int> cur(order.size(), 0);
+    int src = 0;
     for (int k = 0; k < total; ++k) {
-        int src = 0;
-        for (std::size_t i = 0; i < order.size(); ++i) {
-            src += cur[i] * stride[map[i]];
-        }
-        out[k] = log_[src];
+        out[k] = data[src];
+        // Odometer that also tracks the source index incrementally.
         for (int r = static_cast<int>(order.size()) - 1; r >= 0; --r) {
-            if (++cur[r] < rdims[r]) break;
+            ++cur[r];
+            src += stride[map[r]];
+            if (cur[r] < rdims[r]) break;
             cur[r] = 0;
+            src -= rdims[r] * stride[map[r]];
         }
     }
     return fromLog(order, std::move(out));
@@ -361,9 +388,19 @@ Potential Potential::restrict(const std::map<Variable, int>& assignment) const {
 }
 
 Potential& Potential::normalize() {
-    std::vector<float> values = log_;
-    const float z = logSumExp(values);
-    for (float& v : log_) v -= z;
+    // Two passes over the flat buffer, no intermediate copy.
+    float m = -std::numeric_limits<float>::infinity();
+    for (float v : log_) {
+        if (v > m) m = v;
+    }
+    if (std::isfinite(m)) {
+        double acc = 0.0;
+        for (float v : log_) {
+            acc += std::exp(static_cast<double>(v) - m);
+        }
+        const float z = m + static_cast<float>(std::log(acc));
+        for (float& v : log_) v -= z;
+    }
     return *this;
 }
 
@@ -388,41 +425,49 @@ Potential& Potential::normalizeOver(const std::vector<Variable>& to_normalize) {
 
     const int total_other = product(other_dim);
     const int total_norm = product(norm_dim);
-    std::vector<int> cur_other(other_pos.size(), 0);
-    std::vector<int> cur_norm(norm_pos.size(), 0);
 
-    for (int k = 0; k < total_other; ++k) {
-        std::vector<float> group(total_norm);
-        std::fill(cur_norm.begin(), cur_norm.end(), 0);
+    // Index contribution of each combination of the normalized variables.
+    std::vector<int> norm_contrib(total_norm);
+    {
+        std::vector<int> cur(norm_pos.size(), 0);
         for (int s = 0; s < total_norm; ++s) {
             int idx = 0;
-            for (std::size_t i = 0; i < other_pos.size(); ++i) {
-                idx += cur_other[i] * stride[other_pos[i]];
-            }
             for (std::size_t i = 0; i < norm_pos.size(); ++i) {
-                idx += cur_norm[i] * stride[norm_pos[i]];
+                idx += cur[i] * stride[norm_pos[i]];
             }
-            group[s] = log_[idx];
+            norm_contrib[s] = idx;
             for (int r = static_cast<int>(norm_pos.size()) - 1; r >= 0; --r) {
-                if (++cur_norm[r] < norm_dim[r]) break;
-                cur_norm[r] = 0;
+                if (++cur[r] < norm_dim[r]) break;
+                cur[r] = 0;
             }
         }
-        const float z = logSumExp(group);
-        std::fill(cur_norm.begin(), cur_norm.end(), 0);
+    }
+
+    std::vector<int> cur_other(other_pos.size(), 0);
+    float* data = log_.data();
+    for (int k = 0; k < total_other; ++k) {
+        int other_base = 0;
+        for (std::size_t i = 0; i < other_pos.size(); ++i) {
+            other_base += cur_other[i] * stride[other_pos[i]];
+        }
+        // log-sum-exp over the normalized dimensions, then write back.
+        float m = -std::numeric_limits<float>::infinity();
         for (int s = 0; s < total_norm; ++s) {
-            int idx = 0;
-            for (std::size_t i = 0; i < other_pos.size(); ++i) {
-                idx += cur_other[i] * stride[other_pos[i]];
+            const float v = data[other_base + norm_contrib[s]];
+            if (v > m) m = v;
+        }
+        float z;
+        if (std::isfinite(m)) {
+            double acc = 0.0;
+            for (int s = 0; s < total_norm; ++s) {
+                acc += std::exp(static_cast<double>(data[other_base + norm_contrib[s]]) - m);
             }
-            for (std::size_t i = 0; i < norm_pos.size(); ++i) {
-                idx += cur_norm[i] * stride[norm_pos[i]];
-            }
-            log_[idx] = group[s] - z;
-            for (int r = static_cast<int>(norm_pos.size()) - 1; r >= 0; --r) {
-                if (++cur_norm[r] < norm_dim[r]) break;
-                cur_norm[r] = 0;
-            }
+            z = m + static_cast<float>(std::log(acc));
+        } else {
+            z = m;
+        }
+        for (int s = 0; s < total_norm; ++s) {
+            data[other_base + norm_contrib[s]] -= z;
         }
         for (int r = static_cast<int>(other_pos.size()) - 1; r >= 0; --r) {
             if (++cur_other[r] < other_dim[r]) break;
