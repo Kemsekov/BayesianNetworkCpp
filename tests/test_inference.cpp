@@ -361,3 +361,79 @@ TEST(Inference, ThrowsForUnknownVariable) {
     EXPECT_THROW(engine.marginal({ghost}), std::invalid_argument);
     EXPECT_THROW(engine.conditional({ghost}, {}), std::invalid_argument);
 }
+
+TEST(Inference, ThrowsWhenQueryAndEvidenceOverlap) {
+    const auto factors = naiveBayesFactors();
+    const Variable x(0, "X", 2), y(1, "Y", 2);
+    const Inference engine(factors);
+    EXPECT_THROW(engine.conditional({x}, {x}), std::invalid_argument);
+    EXPECT_THROW(engine.conditionalGiven({x}, {{x, 0}}), std::invalid_argument);
+}
+
+TEST(Inference, ThrowsForOutOfRangeEvidenceState) {
+    const auto factors = naiveBayesFactors();
+    const Variable x(0, "X", 2), y(1, "Y", 2);
+    const Inference engine(factors);
+    EXPECT_THROW(engine.conditionalGiven({x}, {{y, 2}}), std::invalid_argument);
+    EXPECT_THROW(engine.conditionalGiven({x}, {{y, -1}}), std::invalid_argument);
+}
+
+TEST(Inference, ThrowsForZeroProbabilityEvidence) {
+    // P(Y=1) is impossible: Y is 1 with probability zero in both X rows.
+    const Variable x(0, "X", 2), y(1, "Y", 2);
+    std::vector<Potential> factors = {
+        Potential({x}, {0.5f, 0.5f}),
+        Potential({x, y}, {1.0f, 0.0f, 1.0f, 0.0f}),  // P(Y=1 | x) = 0 always
+    };
+    const Inference engine(factors);
+    EXPECT_THROW(engine.conditionalGiven({x}, {{y, 1}}), std::runtime_error);
+
+    // The consistent evidence still works.
+    const Potential p = engine.conditionalGiven({x}, {{y, 0}});
+    EXPECT_NEAR(p.probability({{x, 0}}), 0.5, 1e-5);
+    EXPECT_NEAR(p.probability({{x, 1}}), 0.5, 1e-5);
+}
+
+TEST(Inference, MapQuery) {
+    const auto factors = naiveBayesFactors();
+    const Variable x(0, "X", 2), y(1, "Y", 2), z(2, "Z", 2);
+    const Inference engine(factors);
+
+    // P(X | Y=1) = {0.111.., 0.888..} -> X=1.
+    EXPECT_EQ(engine.mapQuery({x}, {{y, 1}})[x], 1);
+    // P(Z) = {0.45, 0.55} -> Z=1.
+    EXPECT_EQ(engine.mapQuery({z}, {})[z], 1);
+    // P(Y | X=0) = {0.9, 0.1} -> Y=0.
+    EXPECT_EQ(engine.mapQuery({y}, {{x, 0}})[y], 0);
+}
+
+TEST(Inference, DiamondMapQuery) {
+    const auto factors = diamondFactors();
+    const Variable a(0, "A", 2), b(1, "B", 2), c(2, "C", 2), d(3, "D", 2);
+    const Inference engine(factors);
+
+    // P(A | D=1) = {0.3875, 0.6125} -> A=1.
+    EXPECT_EQ(engine.mapQuery({a}, {{d, 1}})[a], 1);
+    // P(D | B=0, C=1) = {0.3, 0.7} -> D=1.
+    EXPECT_EQ(engine.mapQuery({d}, {{b, 0}, {c, 1}})[d], 1);
+    // Joint MAP over A,B given C=1.
+    const auto m = engine.mapQuery({a, b}, {{c, 1}});
+    EXPECT_TRUE(m.count(a));
+    EXPECT_TRUE(m.count(b));
+    // Verify against the conditional table argmax.
+    const Potential cond = engine.conditionalGiven({a, b}, {{c, 1}});
+    double best_p = -1.0;
+    int best_a = -1, best_b = -1;
+    for (int av = 0; av < 2; ++av) {
+        for (int bv = 0; bv < 2; ++bv) {
+            const double p = cond.probability({{a, av}, {b, bv}});
+            if (p > best_p) {
+                best_p = p;
+                best_a = av;
+                best_b = bv;
+            }
+        }
+    }
+    EXPECT_EQ(m.at(a), best_a);
+    EXPECT_EQ(m.at(b), best_b);
+}

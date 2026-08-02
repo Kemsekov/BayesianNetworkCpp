@@ -41,15 +41,21 @@ public:
     Potential conditionalGiven(const std::vector<Variable>& query,
                                const std::map<Variable, int>& evidence) const;
 
+    /// Most likely joint assignment over `query` given `evidence` (MAP query).
+    std::map<Variable, int> mapQuery(const std::vector<Variable>& query,
+                                     const std::map<Variable, int>& evidence) const;
+
 private:
     /// Variables ordered by first appearance across the factors.
     std::vector<Variable> globalOrder() const;
     /// Throws if any variable does not occur in the network.
     void checkVariables(const std::vector<Variable>& vars) const;
     /// Multiplies all factors and sums out every variable not in `query_ids`.
+    /// The elimination order is computed once per query set and cached.
     Potential eliminate(const std::set<int>& query_ids) const;
 
     std::vector<Potential> factors_;
+    mutable std::map<std::set<int>, std::vector<int>> order_cache_;
 };
 
 }  // namespace bn

@@ -73,8 +73,13 @@ public:
     Potential& normalizeOver(const std::vector<Variable>& to_normalize);
 
 private:
+    void computeCached();
+
     std::vector<Variable> variables_;
     std::vector<float> log_;  // log-space entries, row-major over variables_
+    std::vector<int> dims_;     // per-variable state counts
+    std::vector<int> strides_;  // row-major strides for dims_
+    int num_entries_ = 1;       // product of dims_
 };
 
 }  // namespace bn
