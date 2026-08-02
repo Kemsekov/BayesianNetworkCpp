@@ -1,0 +1,16 @@
+class	education-spending
+water-project-cost-sharing	superfund-right-to-sue
+adoption-of-the-budget-resolution	aid-to-nicaraguan-contras
+physician-fee-freeze	el-salvador-aid
+el-salvador-aid	
+religious-groups-in-schools	el-salvador-aid
+anti-satellite-test-ban	aid-to-nicaraguan-contras
+aid-to-nicaraguan-contras	el-salvador-aid
+mx-missile	el-salvador-aid
+immigration	water-project-cost-sharing
+synfuels-corporation-cutback	physician-fee-freeze
+education-spending	el-salvador-aid
+superfund-right-to-sue	el-salvador-aid
+crime	physician-fee-freeze
+duty-free-exports	el-salvador-aid
+export-administration-act-south-africa	anti-satellite-test-ban

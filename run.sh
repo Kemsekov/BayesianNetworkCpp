@@ -8,5 +8,5 @@ mkdir -p build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 
-# Run the compiled binary (dynamically finds the project name executable)
-./$(grep -m 1 "project(" ../CMakeLists.txt | sed -e 's/project(//' -e 's/ .*//' -e 's/)//')
+# Run the compiled demo binary
+./BayesianNetwork

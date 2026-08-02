@@ -1,0 +1,42 @@
+marg_class	class	
+marg_water-project-cost-sharing	water-project-cost-sharing	
+marg_adoption-of-the-budget-resolution	adoption-of-the-budget-resolution	
+marg_physician-fee-freeze	physician-fee-freeze	
+marg_el-salvador-aid	el-salvador-aid	
+marg_religious-groups-in-schools	religious-groups-in-schools	
+marg_anti-satellite-test-ban	anti-satellite-test-ban	
+marg_aid-to-nicaraguan-contras	aid-to-nicaraguan-contras	
+marg_mx-missile	mx-missile	
+marg_immigration	immigration	
+marg_synfuels-corporation-cutback	synfuels-corporation-cutback	
+marg_education-spending	education-spending	
+marg_superfund-right-to-sue	superfund-right-to-sue	
+marg_crime	crime	
+marg_duty-free-exports	duty-free-exports	
+marg_export-administration-act-south-africa	export-administration-act-south-africa	
+joint_0_aid-to-nicaraguan-contras_adoption-of-the-budget-resolution	aid-to-nicaraguan-contras,adoption-of-the-budget-resolution	
+joint_1_aid-to-nicaraguan-contras_anti-satellite-test-ban	aid-to-nicaraguan-contras,anti-satellite-test-ban	
+joint_2_anti-satellite-test-ban_export-administration-act-south-africa	anti-satellite-test-ban,export-administration-act-south-africa	
+joint_3_education-spending_class	education-spending,class	
+joint_4_el-salvador-aid_aid-to-nicaraguan-contras	el-salvador-aid,aid-to-nicaraguan-contras	
+joint_5_el-salvador-aid_duty-free-exports	el-salvador-aid,duty-free-exports	
+cond_class_0	class	education-spending=0
+cond_class_1	class	education-spending=1
+cond_water-project-cost-sharing_0	water-project-cost-sharing	superfund-right-to-sue=0
+cond_water-project-cost-sharing_1	water-project-cost-sharing	superfund-right-to-sue=1
+cond_adoption-of-the-budget-resolution_0	adoption-of-the-budget-resolution	aid-to-nicaraguan-contras=0
+cond_adoption-of-the-budget-resolution_1	adoption-of-the-budget-resolution	aid-to-nicaraguan-contras=1
+cond_physician-fee-freeze_0	physician-fee-freeze	el-salvador-aid=0
+cond_physician-fee-freeze_1	physician-fee-freeze	el-salvador-aid=1
+cond_el-salvador-aid_0	el-salvador-aid	
+cond_el-salvador-aid_1	el-salvador-aid	
+cond_religious-groups-in-schools_0	religious-groups-in-schools	el-salvador-aid=0
+cond_religious-groups-in-schools_1	religious-groups-in-schools	el-salvador-aid=1
+cond_anti-satellite-test-ban_0	anti-satellite-test-ban	aid-to-nicaraguan-contras=0
+cond_anti-satellite-test-ban_1	anti-satellite-test-ban	aid-to-nicaraguan-contras=1
+cond_aid-to-nicaraguan-contras_0	aid-to-nicaraguan-contras	el-salvador-aid=0
+cond_aid-to-nicaraguan-contras_1	aid-to-nicaraguan-contras	el-salvador-aid=1
+cond_multi_0	physician-fee-freeze	crime=1;immigration=0
+cond_multi_1	el-salvador-aid,mx-missile	religious-groups-in-schools=0
+cond_multi_2	education-spending	class=1;crime=0
+cond_multi_3	adoption-of-the-budget-resolution	el-salvador-aid=1;physician-fee-freeze=0
