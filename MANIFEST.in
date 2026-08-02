@@ -1,6 +1,7 @@
 include pyproject.toml
 include setup.py
 include README.md
+include LICENSE
 include python/README.md
-recursive-include python/bayesian *.py *.cpp *.h
+recursive-include python/bayesian *.py *.cpp
 recursive-include src *.h *.cpp

@@ -3,4 +3,4 @@
 from ._native import Inference, JunctionTree, Potential, Variable
 
 __all__ = ["Variable", "Potential", "Inference", "JunctionTree"]
-__version__ = "0.1.1"
+__version__ = "0.1.2"
