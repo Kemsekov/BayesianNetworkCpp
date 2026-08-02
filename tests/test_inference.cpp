@@ -361,3 +361,35 @@ TEST(Inference, ThrowsForUnknownVariable) {
     EXPECT_THROW(engine.marginal({ghost}), std::invalid_argument);
     EXPECT_THROW(engine.conditional({ghost}, {}), std::invalid_argument);
 }
+
+TEST(Inference, ThrowsWhenQueryAndEvidenceOverlap) {
+    const auto factors = naiveBayesFactors();
+    const Variable x(0, "X", 2), y(1, "Y", 2);
+    const Inference engine(factors);
+    EXPECT_THROW(engine.conditional({x}, {x}), std::invalid_argument);
+    EXPECT_THROW(engine.conditionalGiven({x}, {{x, 0}}), std::invalid_argument);
+}
+
+TEST(Inference, ThrowsForOutOfRangeEvidenceState) {
+    const auto factors = naiveBayesFactors();
+    const Variable x(0, "X", 2), y(1, "Y", 2);
+    const Inference engine(factors);
+    EXPECT_THROW(engine.conditionalGiven({x}, {{y, 2}}), std::invalid_argument);
+    EXPECT_THROW(engine.conditionalGiven({x}, {{y, -1}}), std::invalid_argument);
+}
+
+TEST(Inference, ThrowsForZeroProbabilityEvidence) {
+    // P(Y=1) is impossible: Y is 1 with probability zero in both X rows.
+    const Variable x(0, "X", 2), y(1, "Y", 2);
+    std::vector<Potential> factors = {
+        Potential({x}, {0.5f, 0.5f}),
+        Potential({x, y}, {1.0f, 0.0f, 1.0f, 0.0f}),  // P(Y=1 | x) = 0 always
+    };
+    const Inference engine(factors);
+    EXPECT_THROW(engine.conditionalGiven({x}, {{y, 1}}), std::runtime_error);
+
+    // The consistent evidence still works.
+    const Potential p = engine.conditionalGiven({x}, {{y, 0}});
+    EXPECT_NEAR(p.probability({{x, 0}}), 0.5, 1e-5);
+    EXPECT_NEAR(p.probability({{x, 1}}), 0.5, 1e-5);
+}
