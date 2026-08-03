@@ -45,6 +45,9 @@ public:
     std::map<Variable, int> mapQuery(const std::vector<Variable>& query,
                                      const std::map<Variable, int>& evidence) const;
 
+    /// The network factors (potentials) this inference was built from.
+    const std::vector<Potential>& factors() const { return factors_; }
+
 private:
     /// Variables ordered by first appearance across the factors.
     std::vector<Variable> globalOrder() const;

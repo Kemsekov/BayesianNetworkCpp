@@ -15,6 +15,7 @@ ext_modules = [
             "src/potential.cpp",
             "src/inference.cpp",
             "src/junction_tree.cpp",
+            "src/fit.cpp",
         ],
         include_dirs=["src"],
         cxx_std=20,

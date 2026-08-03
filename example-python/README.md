@@ -45,6 +45,14 @@ pip install pgmpy numpy pandas  # for the reference implementation
   python api_smoke.py
   ```
 
+- `compare_fit_pgmpy.py` — validates `fit_bayesian` (C++ Chow-Liu + MLE)
+  against pgmpy: learns the same optimal tree, identical query outputs
+  (~1e-7) and much faster fitting:
+
+  ```bash
+  python compare_fit_pgmpy.py
+  ```
+
 ## Notes
 
 - Probabilities are compared with `|pgmpy - bayesian| < 1e-6`; the observed
