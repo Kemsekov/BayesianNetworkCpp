@@ -25,9 +25,6 @@ jobs:
             arch_linux: x86_64
           - os: windows-latest
             label: win_amd64
-          - os: macos-13
-            label: macos-x86_64
-            arch_macos: x86_64
           - os: macos-14
             label: macos-arm64
             arch_macos: arm64
