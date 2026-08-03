@@ -4,14 +4,18 @@
 // Python names (snake_case), dict-based evidence/assignment maps, and
 // exception translation (invalid_argument -> ValueError, runtime_error ->
 // RuntimeError).
+#include <pybind11/numpy.h>
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <cstdint>
+#include <cstring>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "fit.h"
 #include "inference.h"
 #include "junction_tree.h"
 #include "potential.h"
@@ -103,6 +107,7 @@ PYBIND11_MODULE(_native, m) {
 
     py::class_<bn::Inference>(m, "Inference")
         .def(py::init<const std::vector<bn::Potential>&>(), py::arg("factors"))
+        .def_property_readonly("factors", &bn::Inference::factors)
         .def("full_joint", &bn::Inference::fullJoint)
         .def("marginal", &bn::Inference::marginal, py::arg("query"))
         .def("conditional", &bn::Inference::conditional, py::arg("query"),
@@ -119,4 +124,44 @@ PYBIND11_MODULE(_native, m) {
         .def("map_query", &bn::JunctionTree::mapQuery, py::arg("query"))
         .def_property_readonly("num_cliques", &bn::JunctionTree::numCliques)
         .def("clique_scope", &bn::JunctionTree::cliqueScope, py::arg("i"));
+
+    // fit_bayesian(data, names=None): learn a Chow-Liu tree + MLE CPTs from a
+    // 2D int32 array of samples and return an Inference.
+    m.def("fit_bayesian",
+          [](py::array_t<std::int32_t> data,
+             const std::vector<std::string>& names) {
+              py::buffer_info info = data.request();
+              if (info.ndim != 2) {
+                  throw std::invalid_argument(
+                      "fit_bayesian: data must be a 2D int32 array");
+              }
+              const int nrows = static_cast<int>(info.shape[0]);
+              const int ncols = static_cast<int>(info.shape[1]);
+              if (nrows == 0 || ncols == 0) {
+                  throw std::invalid_argument("fit_bayesian: empty data");
+              }
+              std::vector<int> flat(static_cast<std::size_t>(nrows) * ncols);
+              const auto* ptr =
+                  static_cast<const std::int32_t*>(info.ptr);
+              if (info.strides[0] == info.itemsize * ncols) {
+                  std::memcpy(flat.data(), ptr,
+                              flat.size() * sizeof(std::int32_t));
+              } else {
+                  // Non-contiguous (e.g. a strided slice): gather elementwise.
+                  for (int i = 0; i < nrows; ++i) {
+                      for (int j = 0; j < ncols; ++j) {
+                          flat[static_cast<std::size_t>(i) * ncols + j] = ptr[
+                              (i * info.strides[0] + j * info.strides[1]) /
+                              info.itemsize];
+                      }
+                  }
+              }
+              return bn::fitBayesian(flat, nrows, ncols, names);
+          },
+          py::arg("data"),
+          py::arg("names") = std::vector<std::string>{},
+          "Fit a Chow-Liu tree + MLE CPTs from a 2D int32 array of samples "
+          "(rows = samples, cols = variables, states 0..k-1) and return an "
+          "Inference. `names` (optional) provides the variable names; empty "
+          "names default to x1..xn.");
 }

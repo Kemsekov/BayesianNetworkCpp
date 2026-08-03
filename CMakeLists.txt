@@ -13,6 +13,7 @@ add_library(bayesian STATIC
     src/potential.cpp
     src/inference.cpp
     src/junction_tree.cpp
+    src/fit.cpp
 )
 target_include_directories(bayesian PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -30,6 +31,7 @@ add_executable(bayesian_tests
     tests/test_potential.cpp
     tests/test_inference.cpp
     tests/test_junction_tree.cpp
+    tests/test_fit.cpp
 )
 target_link_libraries(bayesian_tests PRIVATE bayesian GTest::gtest_main)
 gtest_discover_tests(bayesian_tests)
